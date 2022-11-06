@@ -1,6 +1,5 @@
 {
-    "name": "cbim-annotation-web",
-    "description": "八仙批注&云渲染",
+    "name": "Annotation-board",
     "version": "0.0.1",
     "main": "./src/main.ts",
     "devDependencies": {
@@ -56,37 +55,26 @@
     "scripts": {
         "start": "npm run dev",
         "serve": "npm run dev",
-        "dev": "cross-env NODE_ENV=development node scripts/server.js",
-        "deploy:prod": "cross-env NODE_ENV=production webpack --config scripts/webpack.config.base.js --progress=profile",
-        "prepare": "husky install"
+        "dev": "cross-env NODE_ENV=development node scripts/server.js"
     },
     "repository": {
         "type": "git",
-        "url": "https://git.cbim.org.cn/cbim-platform/application/cbim-home"
+        "url": "https://github.com/tianjian-sky/AnnotationBoard"
     },
     "keywords": [
         "vue3.0"
     ],
-    "author": "duanhx",
+    "author": "yutianjian",
     "private": true,
     "engines": {
         "node": ">=14.16.0",
         "pnpm": ">=5 <7"
     },
     "dependencies": {
-        "@cbim/app-communication-protocol": "^0.0.1-alpha.15",
-        "@cbim/design-system-antd-adapter": "^1.0.0-alpha.14",
-        "@cbim/design-system-variable": "^1.0.0-alpha.7",
-        "@element-plus/icons-vue": "^2.0.10",
         "@floating-ui/dom": "^1.0.2",
         "@vue/reactivity": "^3.2.31",
         "@vueuse/core": "^9.3.0",
         "ant-design-vue": "^3.2.13",
-        "axios": "^0.26.0",
-        "cbim-render-sdk": "^1.4.29",
-        "cbim-render-ui-test": "^1.0.23",
-        "crypto-js": "^4.1.1",
-        "json-bigint": "^1.0.0",
         "konva": "^8.3.13",
         "lodash": "^4.17.21",
         "lodash-unified": "^1.0.2",
