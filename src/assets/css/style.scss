@@ -1,0 +1,144 @@
+@import "./var.scss";
+
+.height-100 {
+    height: 100%;
+}
+
+.width-100 {
+    width: 100% !important;
+}
+
+.overflow-hidden {
+    overflow: hidden;
+}
+
+.text-ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.flex,
+.flex-column,
+.flex-row,
+.flex-row-reverse {
+    display: flex;
+}
+
+.flex-column {
+    flex-direction: column;
+}
+
+.flex-row {
+    flex-direction: row;
+}
+
+.flex-row-reverse {
+    flex-direction: row-reverse;
+}
+
+.flex-1 {
+    flex: 1;
+}
+
+.flex-0-auto {
+    flex: 0 0 auto;
+}
+
+.flex-align-h {
+    justify-content: center;
+}
+
+.flex-align-v {
+    align-items: center;
+}
+
+.flex-wrap {
+    flex-wrap: wrap;
+}
+
+.space-between {
+    justify-content: space-between;
+}
+
+// font-size
+@for $i from 6 through 20 {
+    .font-#{$i * 2} {
+        font-size: $i * 2px;
+    }
+}
+
+.text-left {
+    text-align: left;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.text-right {
+    text-align: right;
+}
+
+@for $i from 2 through 20 {
+    .padding-#{ $i*2} {
+        padding: $i*2px
+    }
+
+    .margin-#{$i*2} {
+        margin: $i*2px
+    }
+
+    $placements: top, right, bottom, left;
+
+    @each $placement in $placements {
+        .padding-#{$placement}-#{$i*2} {
+            padding-#{$placement}: $i*2px
+        }
+
+        .margin-#{$placement}-#{$i*2} {
+            margin-#{$placement}: $i*2px
+        }
+    }
+}
+
+.color-main {
+    color: $mainColor;
+}
+
+.color-placeholder {
+    color: $placeholderColor;
+}
+
+.color-notice {
+    color: $noticeColor;
+}
+
+.color-danger {
+    color: $requiredColor
+}
+
+.color-link {
+    color: $linkColor
+}
+
+.pass {
+    color: $passColor;
+}
+
+.error {
+    color: $requiredColor;
+}
+
+.f-bold {
+    font-weight: 600;
+    //text-shadow: 0.05px 0px 0px black,
+}
+
+.border-radius {
+    border-radius: 4px;
+}
+
+.iconfont {
+    color: #6D7B98;
+}

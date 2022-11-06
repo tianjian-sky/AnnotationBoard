@@ -1,0 +1,41 @@
+@font-face {
+  font-family: "iconfont"; /* Project id  */
+  src: url('iconfont.ttf?t=1652255687861') format('truetype');
+}
+
+.iconfont {
+  font-family: "iconfont" !important;
+  font-size: 16px;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.icon-more:before {
+  content: "\e748";
+}
+
+.icon-a-teamspace-filled:before {
+  content: "\e693";
+}
+
+.icon-a-basicinformation-filled:before {
+  content: "\e838";
+}
+
+.icon-preferences-filled:before {
+  content: "\e839";
+}
+
+.icon-a-universalannotations-filled-20:before {
+  content: "\e857";
+}
+
+.icon-arrow-right:before {
+  content: "\e6cd";
+}
+
+.icon-a-accountmanagement-filled:before {
+  content: "\e6f1";
+}
+
