@@ -2,16 +2,27 @@
  * @Author: yutianjian
  * @Date: 2022-11-06 13:17:10 
  * @Last Modified by: mikey.zhaopeng
- * @Last Modified time: 2022-11-06 15:02:57
+ * @Last Modified time: 2022-11-10 08:29:57
  */
 <template>
     <div class="drawing-board flex-column">
+        <div class="header">
+            <label>
+                <a class="iconfont iconarrow-left" @click="handleClose"></a>
+                <span class="title">手绘附件</span>
+            </label>
+            <label>
+                <a-button class="margin-right-12" @click="handleSave">保存至本地</a-button>
+                <a-button @click="handleUpload" type="primary">上传附件</a-button>
+            </label>
+        </div>
         <div ref="canvasEl" class="main">
-            <!-- <div class="bg-switch">
-                <label class="label">显示图纸底图</label>
-                <a-switch v-model:checked="showBg" />
-            </div> -->
             <div id="drawing-board-canvas"></div>
+            <div class="bg-switch">
+                <label class="label">显示图纸底图</label>
+                <a-switch v-model:checked="showBg" @change="toggleBg" />
+            </div>
+            <textarea class="floating-textarea" v-model="textInput.val" :style="{left: textInput.left + 'px', top: textInput.top + 'px', border: `${lineWidth}px solid ${color}`}" @blur="handleTextInput"></textarea>
         </div>
         <div class="toolbar-wrap">
             <Toolbar :actives="activeMenus" @menu_click="handleMenuClick" :configs="toolbarConfigs">
@@ -38,27 +49,34 @@
 </template>
 
 <script lang="ts">
-import { ref, defineComponent, onMounted } from 'vue'
+import { ref, defineComponent, onMounted, watch } from 'vue'
 import Toolbar from '../Toolbar.vue'
 import { ANNOTATION_BTN_TOOL_ENUMS } from '../toolbarConfig'
 import AnnotationColorPicker from '../AnnotationColorPicker.vue'
-import { Arrow } from './Arrow'
-import { CloudLine } from './CloudLine'
-import { Eclipse } from './Eclipse'
-import { LeadAnnotation } from './LeadAnnotation'
-import { Rect } from './Rect'
-import { Text } from './Text'
+import { drawArrow } from './Arrow'
+import { drawCloudLine } from './CloudLine'
+import { drawEclipse } from './Eclipse'
+import { drawLeadAnnotation } from './LeadAnnotation'
+import { drawRect } from './Rect'
+import { drawText } from './Text'
+import { drawPostilLine } from './PostilLine'
 import Konva from 'konva'
 
 export default defineComponent({
     name: 'drawingBoard',
-    props: {},
-    emits: ['close'],
+    props: {
+        backgroundImage: {
+            type: String,
+            default: ''
+        }
+    },
+    emits: ['close', 'upload'],
     components: { Toolbar, AnnotationColorPicker },
     setup(props, { emit }) {
         const canvasEl = ref(null)
         const canvas = ref(null)
         const layer = ref(null)
+        const transformer = ref(null)
         const currentCmd = ref(null)
         const activeMenus = ref([ANNOTATION_BTN_TOOL_ENUMS.FONT_SIZE_MIN, ANNOTATION_BTN_TOOL_ENUMS.STROKE_WIDTH_MIN])
         const color = ref('#cf5433')
@@ -68,7 +86,20 @@ export default defineComponent({
         const lineWidth = ref(2)
         const lineWidths = ref([2, 4, 6])
         const showBg = ref(false)
-        const drawList = []
+        const bgLayer = ref(null)
+        const bg = ref(null)
+        const timer = {
+            history: null
+        }
+        const textInput = ref({
+            show: false,
+            left: -999,
+            top: -999,
+            val: '',
+            graphId: ''
+        })
+        const undoStack = ref([])
+        const redoStack = ref([])
         const toolbarConfigs = ref([
             [
                 {
@@ -175,18 +206,24 @@ export default defineComponent({
                 {
                     type: ANNOTATION_BTN_TOOL_ENUMS.UNDO,
                     icon: '#icon-a-turnleft',
-                    name: '上一步'
+                    name: '上一步',
+                    disabled: true
                 },
                 {
                     type: ANNOTATION_BTN_TOOL_ENUMS.REDO,
                     icon: '#icon-a-turnright',
-                    name: '下一步'
+                    name: '下一步',
+                    disabled: true
                 }
             ]
         ])
-        const lineWidthSelection = ref([2, 4, 6])
+        watch([() => [...undoStack.value], () => [...redoStack.value]], ([curUndo, curRedo]) => {
+            const undoMenu: any = toolbarConfigs.value[3][0]
+            const redoMenu: any = toolbarConfigs.value[3][1]
+            undoMenu.disabled = curUndo.length < 2
+            redoMenu.disabled = curRedo.length === 0
+        })
         const currentDrawing = ref(null)
-        const currentSelectDrawing = ref(null)
         const initCanvas = function () {
             const el = canvasEl.value
             canvas.value = new Konva.Stage({
@@ -194,18 +231,70 @@ export default defineComponent({
                 width: el.clientWidth,
                 height: el.clientHeight
             })
-
+            bgLayer.value = new Konva.Layer()
+            bgLayer.value.name('bgLayer')
             layer.value = new Konva.Layer()
+            layer.value.name('layer')
+            canvas.value.add(bgLayer.value)
             canvas.value.add(layer.value)
             initCanvasEvents(canvas.value)
+            saveHistory()
         }
         const initCanvasEvents = function (canvas) {
             canvas.on('mousedown', onMouseDown)
             canvas.on('mousemove', onMouseMove)
             canvas.on('mouseup', onMouseUp)
+            canvas.on('dragend', e => {
+                clearInterval(timer.history)
+                timer.history = setTimeout(() => {
+                    saveHistory()
+                    timer.history = null
+                }, 100)
+            })
         }
         const handleClose = function () {
             emit('close')
+        }
+        const resetTextInput = function () {
+            textInput.value = {
+                show: false,
+                left: -999,
+                top: -999,
+                val: '',
+                graphId: ''
+            }
+        }
+        const handleTextInput = function () {
+            const id = textInput.value.graphId
+            let graph = layer.value.getChildren(function (node) {
+                return node.attrs.name === id
+            })[0]
+            if (graph) {
+                if (graph.attrs.name.includes('LeadAnnotation')) {
+                    const input = graph.getChildren(function (node) {
+                        return node instanceof Konva.Text
+                    })[0]
+                    const inputBg = graph.getChildren(function (node) {
+                        return (node.attrs.name = 'textBg')
+                    })[0]
+                    if (input) {
+                        input.setAttr('text', textInput.value.val)
+                        if (inputBg) {
+                            inputBg.setAttrs({
+                                height: input.getSelfRect().height
+                            })
+                        }
+                    }
+                } else {
+                    graph.setAttr('text', textInput.value.val)
+                }
+            }
+            const index = activeMenus.value.findIndex(type => type === ANNOTATION_BTN_TOOL_ENUMS.TEXT || type === ANNOTATION_BTN_TOOL_ENUMS.LEAD_ANNOTATION)
+            if (index >= 0) {
+                activeMenus.value.splice(index, 1)
+            }
+            resetTextInput()
+            saveHistory()
         }
         const handleMenuClick = function (menu) {
             const type = menu.type
@@ -230,6 +319,16 @@ export default defineComponent({
             if (index >= 0) {
                 activeMenus.value.splice(index, 1)
             } else {
+                activeMenus.value = activeMenus.value.filter(type =>
+                    [
+                        ANNOTATION_BTN_TOOL_ENUMS.STROKE_WIDTH_MIN,
+                        ANNOTATION_BTN_TOOL_ENUMS.STROKE_WIDTH_MID,
+                        ANNOTATION_BTN_TOOL_ENUMS.STROKE_WIDTH_MAX,
+                        ANNOTATION_BTN_TOOL_ENUMS.FONT_SIZE_MIN,
+                        ANNOTATION_BTN_TOOL_ENUMS.FONT_SIZE_MID,
+                        ANNOTATION_BTN_TOOL_ENUMS.FONT_SIZE_MAX
+                    ].includes(type)
+                )
                 activeMenus.value.push(menu.type)
             }
             const isActive = activeMenus.value.includes(type)
@@ -296,45 +395,138 @@ export default defineComponent({
                 case ANNOTATION_BTN_TOOL_ENUMS.STROKE_COLOR_PICKER:
                     break
                 case ANNOTATION_BTN_TOOL_ENUMS.UNDO:
+                    undo()
                     break
                 case ANNOTATION_BTN_TOOL_ENUMS.REDO:
+                    redo()
                     break
             }
         }
-        const handleSave = function () {}
-        const handleUpload = function () {}
+        const handleSave = function () {
+            const url = canvas.value.toDataURL()
+            let anchor = document.createElement('a')
+            anchor.download = '附件批注_' + new Date().getTime()
+            anchor.href = url
+            document.body.appendChild(anchor)
+            anchor.click()
+            anchor.parentNode.removeChild(anchor)
+            anchor = null
+        }
+        const handleUpload = function () {
+            canvas.value.toBlob({
+                callback: blob => {
+                    emit('upload', blob)
+                }
+            })
+        }
         const handleSelect = function (x, y) {
-            const intersect = layer.value.getIntersection({
+            let intersect = layer.value.getIntersection({
                 x,
                 y
             })
-            let hit = false
-            console.log('intersect', intersect)
-            for (const drawItem of drawList) {
-                const isAnseter = drawItem.isAncestorOf(intersect)
-                console.log(drawItem, intersect, isAnseter)
-                if (isAnseter) {
-                    if (currentSelectDrawing.value && currentSelectDrawing.value !== drawItem) {
-                        currentSelectDrawing.value.closeSelect()
+            let isSelectTransform = false
+            if (intersect) {
+                if (transformer.value && intersect._id === transformer.value._id) {
+                    isSelectTransform = true
+                }
+                while (intersect.parent && intersect.parent.attrs?.name != 'layer') {
+                    intersect = intersect.parent
+                    if (transformer.value && intersect._id === transformer.value._id) {
+                        isSelectTransform = true
                     }
-                    currentSelectDrawing.value = drawItem
-                    currentSelectDrawing.value.openSelect()
-                    hit = true
-                    break
+                }
+                if (isSelectTransform) return
+                if (intersect !== currentDrawing.value) {
+                    if (transformer.value) {
+                        transformer.value.detach()
+                        transformer.value.remove()
+                        transformer.value = null
+                        currentDrawing.value = null
+                    }
+                    currentDrawing.value = intersect
+                    transformer.value = new Konva.Transformer({
+                        nodes: [intersect],
+                        keepRatio: false,
+                        boundBoxFunc: (oldBox, newBox) => {
+                            return newBox
+                        }
+                    })
+                    // debugger
+                    layer.value.add(transformer.value)
+                    transformer.value.on('transform', e => {
+                        console.log('transform', e)
+                        clearInterval(timer.history)
+                        timer.history = setTimeout(() => {
+                            saveHistory()
+                            timer.history = null
+                        }, 500)
+                    })
+                }
+            } else {
+                if (transformer.value) {
+                    console.log('detach!!!')
+                    transformer.value.detach()
+                    transformer.value.remove()
+                    transformer.value = null
+                    currentDrawing.value = null
                 }
             }
-            if (!hit) {
-                currentSelectDrawing.value?.closeSelect()
-                currentSelectDrawing.value = null
+        }
+        const recoverHistory = function (history: any) {
+            canvas.value = Konva.Node.create(history, '#drawing-board-canvas')
+            bgLayer.value = canvas.value.getChildren(function (node) {
+                return node.attrs.name === 'bgLayer'
+            })[0]
+            if (bgLayer.value.children[0] && bgLayer.value.children[0].attrs.name === 'true') {
+                showBg.value = true
+            } else {
+                showBg.value = false
             }
+            Konva.Image.fromURL(props.backgroundImage, function (image) {
+                bg.value = image
+                image.name('true')
+                bgLayer.value.removeChildren()
+                bgLayer.value.add(image)
+                bg.value.visible(showBg.value)
+            })
+            layer.value = canvas.value.getChildren(function (node) {
+                return node.attrs.name === 'layer'
+            })[0]
+            transformer.value = null
+            initCanvasEvents(canvas.value)
+        }
+        const undo = function () {
+            if (undoStack.value.length > 1) {
+                const curItem = undoStack.value[undoStack.value.length - 1]
+                const recoverItem = undoStack.value[undoStack.value.length - 2]
+                redoStack.value.push(curItem)
+                undoStack.value.pop()
+                recoverHistory(recoverItem)
+            }
+        }
+        const redo = function () {
+            if (redoStack.value.length) {
+                const item = redoStack.value.slice(-1)[0]
+                undoStack.value.push(item)
+                redoStack.value.pop()
+                recoverHistory(item)
+            }
+        }
+        const saveHistory = function () {
+            const jsonStr = canvas.value.toJSON()
+            const prev = undoStack.value.slice(-1)[0]
+            if (prev && prev === jsonStr) return
+            undoStack.value.push(jsonStr)
+            redoStack.value = []
+            console.log('undoStack:', undoStack.value, undoStack.value.length, redoStack.value.length)
         }
         const onMouseDown = function (e) {
             const cmd = currentCmd.value
             console.log('onMouseDown', e, cmd)
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.ECLIPSE) {
-                currentDrawing.value = new Eclipse({
-                    backgroundColor: fillColor.value,
-                    borderColor: color.value,
+                currentDrawing.value = drawEclipse({
+                    fill: fillColor.value,
+                    stroke: color.value,
                     left: e.evt.offsetX,
                     top: e.evt.offsetY,
                     layer: layer.value,
@@ -342,9 +534,9 @@ export default defineComponent({
                 })
             }
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.RECTANGLE) {
-                currentDrawing.value = new Rect({
-                    backgroundColor: fillColor.value,
-                    borderColor: color.value,
+                currentDrawing.value = drawRect({
+                    fill: fillColor.value,
+                    stroke: color.value,
                     left: e.evt.offsetX,
                     top: e.evt.offsetY,
                     layer: layer.value,
@@ -352,9 +544,9 @@ export default defineComponent({
                 })
             }
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.ARROW) {
-                currentDrawing.value = new Arrow({
-                    backgroundColor: fillColor.value,
-                    borderColor: color.value,
+                currentDrawing.value = drawArrow({
+                    fill: color.value,
+                    stroke: color.value,
                     left: e.evt.offsetX,
                     top: e.evt.offsetY,
                     layer: layer.value,
@@ -362,9 +554,9 @@ export default defineComponent({
                 })
             }
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.CLOUD_LINE) {
-                currentDrawing.value = new CloudLine({
-                    backgroundColor: fillColor.value,
-                    borderColor: color.value,
+                currentDrawing.value = drawCloudLine({
+                    fill: fillColor.value,
+                    stroke: color.value,
                     left: e.evt.offsetX,
                     top: e.evt.offsetY,
                     layer: layer.value,
@@ -372,7 +564,7 @@ export default defineComponent({
                 })
             }
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.GRAFFITI) {
-                currentDrawing.value = new Konva.Line({
+                currentDrawing.value = drawPostilLine({
                     stroke: color.value,
                     strokeWidth: lineWidth.value,
                     lineCap: 'round',
@@ -380,10 +572,9 @@ export default defineComponent({
                     layer: layer.value,
                     points: [e.evt.offsetX, e.evt.offsetY, e.evt.offsetX, e.evt.offsetY]
                 })
-                layer.value.add(currentDrawing.value)
             }
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.TEXT) {
-                currentDrawing.value = new Text({
+                currentDrawing.value = drawText({
                     inputContainer: canvasEl.value,
                     left: e.evt.offsetX,
                     top: e.evt.offsetY,
@@ -391,15 +582,15 @@ export default defineComponent({
                     text: '',
                     padding: 12,
                     wrap: 'char',
-                    fillColor: fillColor.value,
+                    fill: color.value,
                     layer: layer.value
                 })
             }
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.LEAD_ANNOTATION) {
-                currentDrawing.value = new LeadAnnotation({
+                currentDrawing.value = drawLeadAnnotation({
                     inputContainer: canvasEl.value,
-                    backgroundColor: fillColor.value,
-                    borderColor: color.value,
+                    stroke: color.value,
+                    fill: fillColor.value,
                     text: '',
                     left: e.evt.offsetX,
                     top: e.evt.offsetY,
@@ -414,7 +605,6 @@ export default defineComponent({
         }
         const onMouseMove = function (e) {
             const cmd = currentCmd.value
-            // console.log('onMouseMove', Ke, cmd, currentDrawing.value)
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.ECLIPSE) {
                 const obj = currentDrawing.value
                 if (obj) {
@@ -454,8 +644,10 @@ export default defineComponent({
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.GRAFFITI) {
                 const obj = currentDrawing.value
                 if (obj) {
-                    const pts = obj.points()
-                    obj.points(pts.concat([e.evt.offsetX, e.evt.offsetY]))
+                    obj.update({
+                        x: e.evt.offsetX,
+                        y: e.evt.offsetY
+                    })
                 }
             }
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.LEAD_ANNOTATION) {
@@ -471,19 +663,27 @@ export default defineComponent({
         const onMouseUp = function (e) {
             const cmd = currentCmd.value
             if (cmd === ANNOTATION_BTN_TOOL_ENUMS.TEXT) {
-                currentDrawing.value.edit(true)
-                drawList.push(currentDrawing.value)
+                textInput.value = {
+                    show: true,
+                    left: currentDrawing.value.pointStart.x,
+                    top: currentDrawing.value.pointStart.y,
+                    val: '',
+                    graphId: currentDrawing.value.id
+                }
                 currentDrawing.value = null
                 currentCmd.value = null
-                const menuIndex = activeMenus.value.indexOf(cmd)
-                activeMenus.value.splice(menuIndex, 1)
+                saveHistory()
             } else if (cmd === ANNOTATION_BTN_TOOL_ENUMS.LEAD_ANNOTATION) {
-                currentDrawing.value.edit(true)
-                drawList.push(currentDrawing.value)
+                textInput.value = {
+                    show: true,
+                    left: currentDrawing.value.p4.x,
+                    top: currentDrawing.value.p4.y,
+                    val: '',
+                    graphId: currentDrawing.value.id
+                }
                 currentDrawing.value = null
                 currentCmd.value = null
-                const menuIndex = activeMenus.value.indexOf(cmd)
-                activeMenus.value.splice(menuIndex, 1)
+                saveHistory()
             } else if (
                 [
                     ANNOTATION_BTN_TOOL_ENUMS.ECLIPSE,
@@ -495,12 +695,35 @@ export default defineComponent({
                 ].includes(cmd)
             ) {
                 if (currentDrawing.value) {
-                    drawList.push(currentDrawing.value)
                     currentDrawing.value = null
                 }
                 const menuIndex = activeMenus.value.indexOf(cmd)
                 activeMenus.value.splice(menuIndex, 1)
                 currentCmd.value = null
+                saveHistory()
+            }
+        }
+        const toggleBg = function (open) {
+            if (open) {
+                if (bg.value) {
+                    bg.value.visible(true)
+                    bg.value.name('true')
+                    saveHistory()
+                } else {
+                    Konva.Image.fromURL(props.backgroundImage, function (image) {
+                        // Image的状态未同步到saveJSON方法，需要另外处理
+                        bg.value = image
+                        bg.value.name('true')
+                        bgLayer.value.add(image)
+                        saveHistory()
+                    })
+                }
+            } else {
+                if (bg.value) {
+                    bg.value.visible(false)
+                    bg.value.name('false')
+                    saveHistory()
+                }
             }
         }
         onMounted(() => {
@@ -517,10 +740,14 @@ export default defineComponent({
             handleUpload,
             handleMenuClick,
             showBg,
+            textInput,
+            lineWidth,
             toolbarConfigs,
+            handleTextInput,
             onMouseDown,
             onMouseMove,
-            onMouseUp
+            onMouseUp,
+            toggleBg
         }
     }
 })
@@ -572,6 +799,7 @@ export default defineComponent({
         border-radius: 4px;
         box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.06);
         backdrop-filter: blur(30px);
+        padding: 12px;
     }
     .toolbar-wrap {
         position: absolute;

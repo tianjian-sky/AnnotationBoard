@@ -1,5 +1,5 @@
 <template>
-    <div class="annotation-toolbar-item" :class="{active: isActive(menu)}" @click.stop="handleClick(menu)">
+    <div class="annotation-toolbar-item" :class="{active: isActive(menu), disabled: menu.disabled}" @click.stop="handleClick(menu)">
         <a-tooltip :enterable="false" :show-after="50" :content="`${menu.name}`" :placement="menu.trigger == 'hover'?'left':'top'">
             <a class="content">
                 <template v-if="menu.icon">
@@ -13,24 +13,22 @@
                 <slot v-else-if="menu.iconSlot" :name="menu.iconSlot"></slot>
                 <div v-else v-html="menu.html || menu.name"></div>
                 <div v-if="menu.subs && (menu?.trigger === 'hover')" class="subs" :class="{show: isActive(menu), hoverShow: menu?.trigger === 'hover'}">
-                    <div>
-                        <div class="annotation-toolbar-item" :class="{active: isActive(sub)}" v-for="sub in menu.subs" :key="sub.type" @click.stop="handleClick(sub)">
-                            <a class="content">
-                                <slot :name="sub.slot" v-if="sub.slot"></slot>
-                                <template v-else-if="sub.icon">
-                                    <div class="menu-icon">
-                                        <svg v-if="/^\#/.test(sub.icon)" class="icon-svg">
-                                            <use :xlink:href="`${sub.icon}`"></use>
-                                        </svg>
-                                        <i v-else class="iconfont" :class="sub.icon"></i>
-                                    </div>
-                                </template>
-                                <div v-else v-html="sub.html || sub.name"></div>
-                            </a>
-                        </div>
+                    <div class="annotation-toolbar-item" :class="{active: isActive(sub), disabled: menu.disabled}" v-for="sub in menu.subs" :key="sub.type" @click.stop="handleClick(sub)">
+                        <a class="content">
+                            <slot :name="sub.slot" v-if="sub.slot"></slot>
+                            <template v-else-if="sub.icon">
+                                <div class="menu-icon">
+                                    <svg v-if="/^\#/.test(sub.icon)" class="icon-svg">
+                                        <use :xlink:href="`${sub.icon}`"></use>
+                                    </svg>
+                                    <i v-else class="iconfont" :class="sub.icon"></i>
+                                </div>
+                            </template>
+                            <div v-else v-html="sub.html || sub.name"></div>
+                        </a>
                     </div>
                 </div>
-                <div v-if="menu.slot && isActive" class="component">
+                <div v-if="menu.slot && isActive(menu)" class="component">
                     <slot :name="menu.slot" />
                 </div>
             </a>
@@ -57,7 +55,7 @@ export default defineComponent({
     emits: ['menu-click'],
     setup(props, { emit }) {
         const isActive = menu => {
-            return props.actives.includes(menu.type)
+            return props.actives.includes(menu.type) && !menu.disabled
         }
         const handleClick = function (menu) {
             if (menu?.trigger !== 'hover') {
@@ -105,6 +103,23 @@ export default defineComponent({
         background: #fff;
         color: #f65d30;
     }
+    &.disabled {
+        color: #ccc !important;
+        background: initial !important;
+        cursor: not-allowed !important;
+        .icon-svg {
+            use {
+                --c1: #ccc;
+                --c2: #eee;
+            }
+        }
+        &:hover > .content > .menu-icon > .icon-svg {
+            use {
+                --c1: #ccc;
+                --c2: #eee;
+            }
+        }
+    }
     .subs {
         display: none;
         position: absolute;
@@ -115,9 +130,6 @@ export default defineComponent({
         padding-bottom: 4px;
         &.show {
             display: block;
-        }
-        > div {
-            // padding-bottom: 4px;
         }
     }
     &:hover {
